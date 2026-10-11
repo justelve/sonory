@@ -10,6 +10,7 @@ import type { Result } from "neverthrow";
 import { z } from "zod";
 
 import { createDeezerAuth } from "./auth.js";
+import { createDeezerFormats } from "./formats.js";
 
 const idSchema = z.string().regex(/^[1-9]\d*$/);
 const cursorSchema = z
@@ -128,6 +129,7 @@ export function createDeezerProvider(fetchImplementation: typeof fetch = fetch):
     version: "0.0.0",
     apiVersion: 1,
     auth: createDeezerAuth(fetchImplementation),
+    formats: createDeezerFormats(fetchImplementation),
     catalog: {
       search(input, context) {
         const parsed = searchRequestSchema.safeParse(input);

@@ -74,7 +74,12 @@ export function renderOutput(output: CommandOutput, options: OutputOptions = jso
               provider.capabilities
                 .map(
                   (capability) =>
-                    ({ auth: "Sign-in", catalog: "Catalog", download: "Downloads" })[capability],
+                    ({
+                      auth: "Sign-in",
+                      catalog: "Catalog",
+                      formats: "Formats",
+                      download: "Downloads",
+                    })[capability],
                 )
                 .join(", ") || "None",
             ]),

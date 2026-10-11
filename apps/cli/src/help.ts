@@ -74,15 +74,23 @@ const topics: readonly HelpTopic[] = [
   },
   {
     name: "formats",
-    description: "List the audio formats a provider can download for a track.",
+    description: "List the audio formats available for a track.",
     arguments: [
       {
         name: "provider",
-        description: "Provider ID, or default. Use sonory providers to check download support.",
+        description: "Provider ID, or default. Use sonory providers to check format support.",
       },
       { name: "track", description: "Track ID from the search results." },
     ],
-    example: "sonory formats <provider> <track>",
+    example: "sonory formats deezer 3135556",
+    sections: [
+      {
+        title: "Deezer",
+        lines: [
+          "Sign in first with sonory auth deezer. Formats depend on the selected account and track.",
+        ],
+      },
+    ],
   },
   {
     name: "download",

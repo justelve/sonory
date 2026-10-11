@@ -44,7 +44,7 @@ export type LookupError =
   | TaggedError<"unsupported_extension">;
 export type OperationError = LookupError | ProviderOperationError;
 
-const capabilities: readonly Capability[] = ["auth", "catalog", "download"];
+const capabilities: readonly Capability[] = ["auth", "catalog", "formats", "download"];
 
 export class ProviderRegistry {
   readonly #providers = new Map<string, { provider: Provider; summary: ProviderSummary }>();
@@ -165,8 +165,18 @@ export class ProviderRegistry {
     context: OperationContext = {},
   ): ResultAsync<readonly AudioFormat[], OperationError> {
     return this.#run(context, () =>
-      this.#capability(ref.providerId, "download").asyncAndThen((download) =>
-        download.listFormats(ref.id, context),
+      this.#provider(ref.providerId).asyncAndThen(
+        (provider): ResultAsync<readonly AudioFormat[], OperationError> => {
+          const formats = provider.formats ?? provider.download;
+          return formats === undefined
+            ? errAsync(
+                new TaggedError(
+                  "unsupported_capability",
+                  `Provider "${ref.providerId}" does not support format discovery.`,
+                ),
+              )
+            : formats.listFormats(ref.id, context);
+        },
       ),
     );
   }

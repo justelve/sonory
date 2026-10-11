@@ -115,3 +115,59 @@ test("search cursor is passed to the provider", async () => {
   (await runCommand(registry, ["search", "fixture", "tone", "25"]))._unsafeUnwrap();
   expect(search).toHaveBeenCalledWith("fixture", { query: "tone", cursor: "25" }, {});
 });
+
+test("Deezer formats dispatch uses the signed-in session and returns JSON metadata", async () => {
+  const registry = new ProviderRegistry();
+  const fetch = vi
+    .fn<typeof globalThis.fetch>()
+    .mockResolvedValueOnce(
+      Response.json({
+        error: [],
+        results: {
+          USER: { USER_ID: 42, OPTIONS: { license_token: "private-license" } },
+          checkForm: "private-csrf",
+        },
+      }),
+    )
+    .mockResolvedValueOnce(
+      Response.json({
+        error: [],
+        results: {
+          SNG_ID: "3135556",
+          TRACK_TOKEN: "private-track",
+          FILESIZE_MP3_128: "1000",
+          FILESIZE_MP3_320: "0",
+          FILESIZE_FLAC: "0",
+        },
+      }),
+    )
+    .mockResolvedValueOnce(
+      Response.json({
+        data: [
+          {
+            media: [
+              {
+                media_type: "FULL",
+                format: "MP3_128",
+                sources: [{ url: "https://cdn.deezer.com/private-audio" }],
+              },
+            ],
+          },
+        ],
+      }),
+    );
+  registry.register(createDeezerProvider(fetch))._unsafeUnwrap();
+  const result = (
+    await runCommand(registry, ["formats", "deezer", "3135556"], {
+      session: {
+        account: { id: "42", displayName: "Listener" },
+        credentials: { arl: "a".repeat(192) },
+      },
+    })
+  )._unsafeUnwrap();
+  expect(JSON.parse(result)).toEqual([
+    { id: "MP3_128", extension: "mp3", mediaType: "audio/mpeg", lossless: false, bitrateKbps: 128 },
+  ]);
+  expect(result).not.toContain("private-");
+  expect(registry.list()[0]?.capabilities).toEqual(["auth", "catalog", "formats"]);
+});

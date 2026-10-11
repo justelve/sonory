@@ -262,9 +262,10 @@ test("response next URLs never control the request destination", async () => {
   );
 });
 
-test("the provider advertises authentication and catalog without downloads", () => {
+test("the provider advertises authentication, catalog, and formats without downloads", () => {
   const { provider, catalog } = setup({});
   expect(provider.auth).toBeDefined();
   expect(provider.download).toBeUndefined();
+  expect(provider.formats).toBeDefined();
   expect(provider.catalog).toBe(catalog);
 });

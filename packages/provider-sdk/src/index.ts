@@ -107,11 +107,14 @@ export interface DownloadSource {
   readonly contentLength?: number;
 }
 
-export interface DownloadCapability {
+export interface FormatsCapability {
   listFormats(
     trackId: string,
     context: OperationContext,
   ): ResultAsync<readonly AudioFormat[], ProviderOperationError>;
+}
+
+export interface DownloadCapability extends FormatsCapability {
   open(
     trackId: string,
     formatId: string,
@@ -122,6 +125,7 @@ export interface DownloadCapability {
 export interface ProviderCapabilities {
   readonly auth: AuthCapability;
   readonly catalog: CatalogCapability;
+  readonly formats: FormatsCapability;
   readonly download: DownloadCapability;
 }
 

@@ -6,6 +6,7 @@ import type {
   AuthCapability,
   CatalogCapability,
   DownloadCapability,
+  FormatsCapability,
   DownloadStream,
   ExtensionCapability,
   Page,
@@ -69,6 +70,44 @@ function downloadProvider() {
 }
 
 describe("ProviderRegistry", () => {
+  test("format-only providers advertise discovery without downloads", async () => {
+    const registry = new ProviderRegistry();
+    const listFormats = vi.fn<FormatsCapability["listFormats"]>(() => okAsync([format]));
+    registry
+      .register({
+        id: "formats-only",
+        name: "Formats fixture",
+        version: "1",
+        apiVersion: 1,
+        formats: { listFormats },
+      })
+      ._unsafeUnwrap();
+    expect(registry.list()[0]?.capabilities).toEqual(["formats"]);
+    const context = { signal: new AbortController().signal };
+    expect(
+      (
+        await registry.listFormats({ providerId: "formats-only", id: "track" }, context)
+      )._unsafeUnwrap(),
+    ).toEqual([format]);
+    expect(listFormats).toHaveBeenCalledWith("track", context);
+    expect(
+      (
+        await registry.openDownload({ providerId: "formats-only", id: "track" }, "original")
+      )._unsafeUnwrapErr().tag,
+    ).toBe("unsupported_capability");
+  });
+
+  test("explicit format discovery takes precedence over the download capability", async () => {
+    const registry = new ProviderRegistry();
+    const provider = downloadProvider();
+    const listFormats = vi.fn<FormatsCapability["listFormats"]>(() => okAsync([]));
+    registry.register({ ...provider, formats: { listFormats } })._unsafeUnwrap();
+    expect(
+      (await registry.listFormats({ providerId: provider.id, id: "track" }))._unsafeUnwrap(),
+    ).toEqual([]);
+    expect(provider.download.listFormats).not.toHaveBeenCalled();
+  });
+
   test("catalog and download providers register independently without authentication", () => {
     const registry = new ProviderRegistry();
     expect(registry.register(catalogProvider())).toEqual(ok(undefined));
@@ -101,6 +140,7 @@ describe("ProviderRegistry", () => {
     { ...catalogProvider(), catalog: { search: () => okAsync({ items: [] }) } },
     { ...catalogProvider(), auth: {} },
     { ...catalogProvider(), download: {} },
+    { ...catalogProvider(), formats: {} },
     { ...catalogProvider(), extensions: { lyrics: "Unnamespaced extension" } },
     { ...catalogProvider(), extensions: { "fixture:lyrics": {} } },
   ])("invalid providers return tagged validation issues: %j", (provider) => {

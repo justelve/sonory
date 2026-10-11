@@ -12,6 +12,7 @@ const shape = z.object({
     .object({ authenticate: z.function(), signOut: z.function(), signIn: z.function().optional() })
     .optional(),
   catalog: z.object({ search: z.function(), getTrack: z.function() }).optional(),
+  formats: z.object({ listFormats: z.function() }).optional(),
   download: z.object({ listFormats: z.function(), open: z.function() }).optional(),
   extensions: z
     .record(
