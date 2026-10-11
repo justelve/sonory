@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 
 import { expect, test } from "vitest";
+import { z } from "zod";
 
 const execute = promisify(execFile);
 const run = (args: readonly string[]) =>
@@ -20,8 +21,9 @@ test("piped downloads use a default filename and emit only a JSON receipt", asyn
       [resolve("apps/cli/dist/main.js"), "download", "fixture", "tone", "wav"],
       { cwd: directory, env: { ...process.env, NO_COLOR: undefined, FORCE_COLOR: "1" } },
     );
-    const path = join(await realpath(directory), "fixture-tone-wav.wav");
-    expect(JSON.parse(stdout)).toEqual({ path });
+    const path = join(directory, "fixture-tone-wav.wav");
+    const receipt = z.strictObject({ path: z.string() }).parse(JSON.parse(stdout));
+    expect(await realpath(receipt.path)).toBe(await realpath(path));
     expect(stderr).toBe("");
     expect((await readFile(path)).length).toBe(64044);
     expect(await readdir(directory)).toEqual(["fixture-tone-wav.wav"]);
