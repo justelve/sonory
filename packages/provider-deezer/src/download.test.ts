@@ -16,7 +16,7 @@ function setup(response: Response) {
   return { fetch, open: () => openEncryptedDownload(fetch, source, {}) };
 }
 
-test("streams encrypted bytes unchanged with opaque output metadata", async () => {
+test("streams encrypted bytes unchanged with the requested format metadata", async () => {
   const chunks = [Uint8Array.of(255, 0), Uint8Array.of(13, 17, 254), Uint8Array.of(128)];
   const cancel = vi.fn<() => void>();
   const { fetch, open } = setup(
@@ -33,11 +33,7 @@ test("streams encrypted bytes unchanged with opaque output metadata", async () =
     ),
   );
   const download = (await open())._unsafeUnwrap();
-  expect(download.format).toMatchObject({
-    encrypted: true,
-    extension: "encrypted",
-    mediaType: "application/octet-stream",
-  });
+  expect(download.format).toEqual(source.format);
   expect(download.contentLength).toBe(6);
   const received: number[] = [];
   for (;;) {

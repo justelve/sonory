@@ -93,12 +93,7 @@ export function openEncryptedDownload(
       let closed = false;
       let ended = false;
       return ok({
-        format: {
-          ...source.format,
-          encrypted: true,
-          extension: "encrypted",
-          mediaType: "application/octet-stream",
-        },
+        format: source.format,
         contentLength: source.contentLength,
         stream: {
           read() {

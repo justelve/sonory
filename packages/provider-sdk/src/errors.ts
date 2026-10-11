@@ -16,4 +16,5 @@ export type ProviderOperationError =
   | TaggedError<"rate_limited">
   | TaggedError<"unavailable">
   | TaggedError<"cancelled">
+  | TaggedError<"incomplete_download">
   | TaggedError<"provider_failure">;

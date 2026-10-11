@@ -12,6 +12,7 @@ import { z } from "zod";
 import { createDeezerAuth } from "./auth.js";
 import { createDeezerFormats } from "./formats.js";
 import { openEncryptedDownload } from "./download.js";
+import { decryptDownloadSource } from "./decryption.js";
 
 const idSchema = z.string().regex(/^[1-9]\d*$/);
 const cursorSchema = z
@@ -137,7 +138,8 @@ export function createDeezerProvider(fetchImplementation: typeof fetch = fetch):
       open: (trackId, formatId, context) =>
         formats
           .resolveSource(trackId, formatId, context)
-          .andThen((source) => openEncryptedDownload(fetchImplementation, source, context)),
+          .andThen((source) => openEncryptedDownload(fetchImplementation, source, context))
+          .map((download) => decryptDownloadSource(download, trackId)),
     },
     catalog: {
       search(input, context) {

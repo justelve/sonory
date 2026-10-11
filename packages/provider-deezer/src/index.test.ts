@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
+import { inspect } from "node:util";
 
 import type { SearchRequest } from "@sonory/provider-sdk";
 import { ResultAsync } from "neverthrow";
 import { expect, test, vi } from "vitest";
 
 import { createDeezerProvider } from "./index.js";
+import { encryptChunk, generateBlowfishKey } from "./crypto.js";
 
 const track = {
   id: 3135556,
@@ -268,4 +270,105 @@ test("the provider advertises authentication, catalog, formats, and encrypted do
   expect(provider.download).toBeDefined();
   expect(provider.formats).toBeDefined();
   expect(provider.catalog).toBe(catalog);
+});
+
+test("download.open decrypts Blowfish-striped media into playable audio", async () => {
+  const plain = Uint8Array.from({ length: 9144 }, (_, index) => (index * 7 + 3) & 0xff);
+  const padding = (2048 - (plain.length % 2048)) % 2048;
+  const cipher = new Uint8Array(padding + plain.length);
+  cipher.set(plain, padding);
+  const key = generateBlowfishKey("3135556");
+  for (let offset = 0; offset + 2048 <= cipher.length; offset += 6144) {
+    cipher.set(encryptChunk(cipher.subarray(offset, offset + 2048), key), offset);
+  }
+  const chunks: Uint8Array[] = [];
+  for (let offset = 0; offset < cipher.length;) {
+    const size = Math.min([5000, 2240, 3000][chunks.length % 3] ?? 1, cipher.length - offset);
+    chunks.push(cipher.subarray(offset, offset + size));
+    offset += size;
+  }
+  const fetch = vi
+    .fn<typeof globalThis.fetch>()
+    .mockResolvedValueOnce(
+      Response.json({
+        error: [],
+        results: {
+          USER: { USER_ID: 42, OPTIONS: { license_token: "private-license" } },
+          checkForm: "private-csrf",
+        },
+      }),
+    )
+    .mockResolvedValueOnce(
+      Response.json({
+        error: {},
+        results: {
+          SNG_ID: "3135556",
+          TRACK_TOKEN: "private-track",
+          FILESIZE_MP3_128: String(cipher.length),
+          FILESIZE_MP3_320: "0",
+          FILESIZE_FLAC: "0",
+        },
+      }),
+    )
+    .mockResolvedValueOnce(
+      Response.json({
+        data: [
+          {
+            media: [
+              {
+                media_type: "FULL",
+                format: "MP3_128",
+                sources: [{ url: "https://cdn.deezer.com/private-audio" }],
+              },
+            ],
+          },
+        ],
+      }),
+    )
+    .mockImplementationOnce(() => {
+      const remaining = [...chunks];
+      return Promise.resolve(
+        new Response(
+          new ReadableStream<Uint8Array>({
+            pull(controller) {
+              const next = remaining.shift();
+              if (next === undefined) controller.close();
+              else controller.enqueue(next);
+            },
+          }),
+          { headers: { "Content-Length": String(cipher.length) } },
+        ),
+      );
+    });
+  const provider = createDeezerProvider(fetch);
+  assert(provider.download !== undefined);
+  const context = {
+    session: {
+      account: { id: "42", displayName: "Listener" },
+      credentials: { arl: "a".repeat(192) },
+    },
+  };
+  const download = (await provider.download.open("3135556", "MP3_128", context))._unsafeUnwrap();
+  expect(download.format).toEqual({
+    id: "MP3_128",
+    extension: "mp3",
+    mediaType: "audio/mpeg",
+    lossless: false,
+    bitrateKbps: 128,
+    encrypted: false,
+  });
+  expect(download.contentLength).toBeUndefined();
+  const received: number[] = [];
+  for (;;) {
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Consume chunks in stream order.
+    const chunk = (await download.stream.read())._unsafeUnwrap();
+    if (chunk === null) break;
+    received.push(...chunk);
+  }
+  expect(Uint8Array.from(received)).toEqual(plain);
+  expect((await download.stream.read())._unsafeUnwrap()).toBeNull();
+  (await download.stream.close())._unsafeUnwrap();
+  expect(fetch).toHaveBeenCalledTimes(4);
+  expect(fetch.mock.calls[3]?.[0]).toBe("https://cdn.deezer.com/private-audio");
+  expect(inspect(download, { depth: null })).not.toContain("private-");
 });

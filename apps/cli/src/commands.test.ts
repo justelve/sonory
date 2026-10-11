@@ -253,7 +253,7 @@ test.each(["complete", "truncated", "cancelled"] as const)(
           );
         });
       registry.register(createDeezerProvider(fetch))._unsafeUnwrap();
-      const target = join(directory, "track.MP3_128.encrypted");
+      const target = join(directory, "track.mp3");
       const result = await runCommand(
         registry,
         ["download", "deezer", "3135556", "MP3_128", target],
@@ -273,9 +273,7 @@ test.each(["complete", "truncated", "cancelled"] as const)(
               error: mode === "cancelled" ? "cancelled" : "incomplete_download",
             },
       );
-      expect(await readdir(directory)).toEqual(
-        mode === "complete" ? ["track.MP3_128.encrypted"] : [],
-      );
+      expect(await readdir(directory)).toEqual(mode === "complete" ? ["track.mp3"] : []);
       const bytes = mode === "complete" ? await readFile(target) : null;
       expect(bytes).toEqual(mode === "complete" ? Buffer.from([255, 0, 254, 128]) : null);
       expect(fetch).toHaveBeenCalledTimes(4);

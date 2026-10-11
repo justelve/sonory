@@ -112,8 +112,8 @@ const topics: readonly HelpTopic[] = [
       {
         title: "Deezer",
         lines: [
-          "Deezer downloads save encrypted bytes, which are not playable audio files.",
-          "Use an .encrypted destination, such as ./track.MP3_128.encrypted.",
+          "Deezer media is delivered encrypted and is decrypted automatically while saving.",
+          "Save playable audio directly, such as ./song.mp3 or ./song.flac.",
         ],
       },
     ],
