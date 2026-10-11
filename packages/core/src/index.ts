@@ -1,6 +1,8 @@
 import { TaggedError } from "@sonory/provider-sdk";
 import type {
   Account,
+  ProviderSession,
+  SignInHost,
   AudioFormat,
   Capability,
   DownloadSource,
@@ -17,7 +19,7 @@ import type {
 import { err, errAsync, ok, Result, ResultAsync } from "neverthrow";
 import type { z } from "zod";
 
-import { operationResultSchema, providerSchema } from "./provider-schema.js";
+import { operationResultSchema, providerSchema, sessionSchema } from "./provider-schema.js";
 
 export { downloadToFile } from "./download.js";
 export type { DownloadError } from "./download.js";
@@ -94,6 +96,42 @@ export class ProviderRegistry {
         auth.authenticate(input, context),
       ),
     );
+  }
+
+  signIn(
+    providerId: string,
+    host: SignInHost,
+    context: OperationContext = {},
+  ): ResultAsync<ProviderSession, OperationError> {
+    return this.#run(context, () =>
+      this.#capability(providerId, "auth").asyncAndThen(
+        (auth): ResultAsync<ProviderSession, OperationError> =>
+          auth.signIn === undefined
+            ? errAsync(
+                new TaggedError(
+                  "unsupported_capability",
+                  "This provider does not define a sign-in process.",
+                ),
+              )
+            : auth.signIn(host, context),
+      ),
+    )
+      .andThen((session) => {
+        const parsed = sessionSchema.safeParse(session);
+        return parsed.success
+          ? ok(parsed.data)
+          : err(
+              new TaggedError("provider_failure", "Provider returned an invalid sign-in session."),
+            );
+      })
+      .mapErr((error) =>
+        error.tag === "provider_failure"
+          ? new TaggedError(
+              "provider_failure",
+              "Provider sign-in failed or returned an invalid session.",
+            )
+          : error,
+      );
   }
 
   signOut(providerId: string, context: OperationContext = {}): ResultAsync<void, OperationError> {
@@ -232,3 +270,8 @@ export class ProviderRegistry {
       : ok(entry.provider);
   }
 }
+
+export * from "./accounts.js";
+export * from "./account-store.js";
+export * from "./credential-store.js";
+export * from "./account-manager.js";

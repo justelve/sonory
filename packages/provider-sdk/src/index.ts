@@ -14,6 +14,7 @@ export interface ProviderManifest {
 
 export interface OperationContext {
   readonly signal?: AbortSignal;
+  readonly session?: ProviderSession;
 }
 
 export interface Account {
@@ -21,7 +22,29 @@ export interface Account {
   readonly displayName: string;
 }
 
+export interface ProviderSession {
+  readonly account: Account;
+  readonly credentials: Readonly<Record<string, unknown>>;
+}
+
+export interface CredentialField {
+  readonly id: string;
+  readonly label: string;
+  readonly secret: boolean;
+}
+
+export interface SignInHost {
+  requestCredentials(
+    fields: readonly CredentialField[],
+    context: OperationContext,
+  ): ResultAsync<Readonly<Record<string, unknown>>, ProviderOperationError>;
+}
+
 export interface AuthCapability {
+  signIn?(
+    host: SignInHost,
+    context: OperationContext,
+  ): ResultAsync<ProviderSession, ProviderOperationError>;
   authenticate(
     input: Readonly<Record<string, unknown>>,
     context: OperationContext,

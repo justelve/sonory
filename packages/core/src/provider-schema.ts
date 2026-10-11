@@ -8,7 +8,9 @@ const shape = z.object({
   name: z.string().trim().min(1),
   version: z.string().trim().min(1),
   apiVersion: z.literal(1),
-  auth: z.object({ authenticate: z.function(), signOut: z.function() }).optional(),
+  auth: z
+    .object({ authenticate: z.function(), signOut: z.function(), signIn: z.function().optional() })
+    .optional(),
   catalog: z.object({ search: z.function(), getTrack: z.function() }).optional(),
   download: z.object({ listFormats: z.function(), open: z.function() }).optional(),
   extensions: z
@@ -33,3 +35,8 @@ export const operationResultSchema = z.union([
   z.instanceof(Ok),
   z.instanceof(Err).refine((result) => result.error instanceof TaggedError),
 ]);
+
+export const sessionSchema = z.object({
+  account: z.object({ id: z.string().min(1), displayName: z.string() }),
+  credentials: z.record(z.string(), z.unknown()),
+});

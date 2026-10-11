@@ -3,7 +3,7 @@ import { inspect } from "node:util";
 
 import { expect, test, vi } from "vitest";
 
-import { promptCredentials, readCredentials } from "./credentials.js";
+import { promptChoice, promptCredentials, readCredentials } from "./credentials.js";
 
 test("reads a credential object across chunks", async () => {
   const input = Readable.from([Buffer.from('{"arl":'), Buffer.from('"abcdef"}')]);
@@ -61,7 +61,11 @@ function terminal() {
 
 test("the ARL prompt supports editing without echoing the credential", async () => {
   const { input, output, text } = terminal();
-  const operation = promptCredentials("deezer", input, output);
+  const operation = promptCredentials(
+    [{ id: "arl", label: "Deezer ARL", secret: true }],
+    input,
+    output,
+  );
   await Promise.resolve();
   input.write("abcx\x7fdef\r");
   expect((await operation)._unsafeUnwrap()).toEqual({ arl: "abcdef" });
@@ -73,7 +77,11 @@ test("Ctrl+C cancels the hidden prompt and restores raw mode", async () => {
   const { input, output, text } = terminal();
   const setRawMode = vi.fn<(enabled: boolean) => void>();
   Object.assign(input, { isTTY: true, setRawMode });
-  const operation = promptCredentials("deezer", input, output);
+  const operation = promptCredentials(
+    [{ id: "arl", label: "Deezer ARL", secret: true }],
+    input,
+    output,
+  );
   await Promise.resolve();
   input.write("private-credential\x03");
   expect((await operation)._unsafeUnwrapErr().tag).toBe("cancelled");
@@ -86,7 +94,12 @@ test("Ctrl+C cancels the hidden prompt and restores raw mode", async () => {
 test("external cancellation interrupts the prompt", async () => {
   const { input, output } = terminal();
   const controller = new AbortController();
-  const operation = promptCredentials("deezer", input, output, { signal: controller.signal });
+  const operation = promptCredentials(
+    [{ id: "arl", label: "Deezer ARL", secret: true }],
+    input,
+    output,
+    { signal: controller.signal },
+  );
   await Promise.resolve();
   controller.abort();
   expect((await operation)._unsafeUnwrapErr().tag).toBe("cancelled");
@@ -95,7 +108,11 @@ test("external cancellation interrupts the prompt", async () => {
 
 test("EOF cancels the prompt instead of waiting indefinitely", async () => {
   const { input, output } = terminal();
-  const operation = promptCredentials("deezer", input, output);
+  const operation = promptCredentials(
+    [{ id: "arl", label: "Deezer ARL", secret: true }],
+    input,
+    output,
+  );
   await Promise.resolve();
   input.end();
   expect((await operation)._unsafeUnwrapErr().tag).toBe("cancelled");
@@ -103,16 +120,42 @@ test("EOF cancels the prompt instead of waiting indefinitely", async () => {
 
 test("pre-cancelled prompts do not read or write the terminal", async () => {
   const { input, output, text } = terminal();
-  const result = await promptCredentials("deezer", input, output, { signal: AbortSignal.abort() });
+  const result = await promptCredentials(
+    [{ id: "arl", label: "Deezer ARL", secret: true }],
+    input,
+    output,
+    { signal: AbortSignal.abort() },
+  );
   expect(result._unsafeUnwrapErr().tag).toBe("cancelled");
   expect(text()).toBe("");
   expect(input.listenerCount("keypress")).toBe(0);
 });
 
-test("other providers do not receive a Deezer credential prompt", async () => {
+test("providers define their own credential fields", async () => {
   const { input, output, text } = terminal();
-  expect((await promptCredentials("unknown", input, output))._unsafeUnwrapErr().tag).toBe(
-    "invalid_input",
+  const operation = promptCredentials(
+    [{ id: "token", label: "Provider token", secret: true }],
+    input,
+    output,
   );
-  expect(text()).toBe("");
+  await Promise.resolve();
+  input.write("secret\r");
+  expect((await operation)._unsafeUnwrap()).toEqual({ token: "secret" });
+  expect(text()).toBe("Provider token: \n");
+});
+
+test("account selection returns the selected index", async () => {
+  const { input, output } = terminal();
+  const operation = promptChoice(["One", "Two"], input, output);
+  await Promise.resolve();
+  input.write("2\r");
+  expect((await operation)._unsafeUnwrap()).toBe(1);
+});
+
+test("Ctrl+C cancels account selection", async () => {
+  const { input, output } = terminal();
+  const operation = promptChoice(["One", "Two"], input, output);
+  await Promise.resolve();
+  input.write("\x03");
+  expect((await operation)._unsafeUnwrapErr().tag).toBe("cancelled");
 });

@@ -3,7 +3,7 @@ import { Writable } from "node:stream";
 import type { Readable } from "node:stream";
 
 import { TaggedError } from "@sonory/provider-sdk";
-import type { OperationContext } from "@sonory/provider-sdk";
+import type { CredentialField, OperationContext } from "@sonory/provider-sdk";
 import { err, errAsync, ok, ResultAsync } from "neverthrow";
 import type { Result } from "neverthrow";
 import { z } from "zod";
@@ -12,18 +12,11 @@ const schema = z.record(z.string(), z.unknown());
 type CredentialError = TaggedError<"invalid_input"> | TaggedError<"cancelled">;
 
 export function promptCredentials(
-  providerId: string,
+  fields: readonly CredentialField[],
   input: Readable,
   output: Writable,
   context: OperationContext = {},
 ): ResultAsync<Readonly<Record<string, unknown>>, CredentialError> {
-  if (providerId !== "deezer")
-    return errAsync(
-      new TaggedError(
-        "invalid_input",
-        "Interactive credentials are not defined for this provider; supply JSON through standard input.",
-      ),
-    );
   if (context.signal?.aborted === true)
     return errAsync(new TaggedError("cancelled", "Credential input was cancelled."));
   const controller = new AbortController();
@@ -44,21 +37,27 @@ export function promptCredentials(
       prompt.once("SIGINT", cancel);
       prompt.once("close", cancel);
       try {
-        output.write("Deezer ARL: ");
-        const arl = await prompt.question("", { signal });
-        return { arl };
+        const credentials: Record<string, unknown> = {};
+        for (const field of fields) {
+          output.write(`${field.label}: `);
+          // Prompts share a terminal and must run sequentially.
+          // oxlint-disable-next-line eslint/no-await-in-loop
+          credentials[field.id] = await prompt.question("", { signal });
+          output.write("\n");
+        }
+        return credentials;
       } finally {
         prompt.removeListener("SIGINT", cancel);
         prompt.removeListener("close", cancel);
         prompt.close();
         muted.destroy();
-        output.write("\n");
+        if (signal.aborted) output.write("\n");
       }
     }),
     () =>
       signal.aborted
         ? new TaggedError("cancelled", "Credential input was cancelled.")
-        : new TaggedError("invalid_input", "Could not read the ARL."),
+        : new TaggedError("invalid_input", "Could not read credentials."),
   );
 }
 
@@ -112,4 +111,44 @@ export function readCredentials(
         ? new TaggedError("cancelled", "Credential input was cancelled.")
         : new TaggedError("invalid_input", "Could not read credential JSON."),
   ).andThen((result) => result);
+}
+
+export function promptChoice(
+  choices: readonly string[],
+  input: Readable,
+  output: Writable,
+  context: OperationContext = {},
+): ResultAsync<number, CredentialError> {
+  if (context.signal?.aborted === true)
+    return errAsync(new TaggedError("cancelled", "Account selection was cancelled."));
+  const controller = new AbortController();
+  const signal =
+    context.signal === undefined
+      ? controller.signal
+      : AbortSignal.any([context.signal, controller.signal]);
+  const cancel = () => controller.abort();
+  return ResultAsync.fromPromise(
+    Promise.resolve().then(async () => {
+      const prompt = createInterface({ input, output, terminal: true, historySize: 0 });
+      prompt.once("SIGINT", cancel);
+      prompt.once("close", cancel);
+      try {
+        choices.forEach((choice, index) => output.write(`${index + 1}. ${choice}\n`));
+        return await prompt.question("Choose an account or provider: ", { signal });
+      } finally {
+        prompt.removeListener("SIGINT", cancel);
+        prompt.removeListener("close", cancel);
+        prompt.close();
+      }
+    }),
+    () =>
+      signal.aborted
+        ? new TaggedError("cancelled", "Account selection was cancelled.")
+        : new TaggedError("invalid_input", "Could not read account selection."),
+  ).andThen((answer) => {
+    const index = Number(answer.trim()) - 1;
+    return Number.isInteger(index) && index >= 0 && index < choices.length
+      ? ok(index)
+      : err(new TaggedError("invalid_input", "Choose a listed number."));
+  });
 }

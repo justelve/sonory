@@ -40,7 +40,14 @@ function transportError(context: OperationContext): ProviderOperationError {
 }
 
 export function createDeezerAuth(fetchImplementation: typeof fetch): AuthCapability {
-  return {
+  const auth: AuthCapability = {
+    signIn(host, context) {
+      return host
+        .requestCredentials([{ id: "arl", label: "Deezer ARL", secret: true }], context)
+        .andThen((credentials) =>
+          auth.authenticate(credentials, context).map((account) => ({ account, credentials })),
+        );
+    },
     authenticate(input, context) {
       return ResultAsync.fromPromise(
         Promise.resolve().then(async (): Promise<Result<Account, ProviderOperationError>> => {
@@ -127,4 +134,5 @@ export function createDeezerAuth(fetchImplementation: typeof fetch): AuthCapabil
       return okAsync(undefined);
     },
   };
+  return auth;
 }

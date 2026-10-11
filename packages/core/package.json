@@ -14,7 +14,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@napi-rs/keyring": "2.1.1",
     "@sonory/provider-sdk": "workspace:*",
+    "env-paths": "4.0.0",
     "neverthrow": "8.2.0",
     "zod": "4.6.5"
   }
