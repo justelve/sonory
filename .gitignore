@@ -1,2 +1,14 @@
 # mac
 .DS_Store
+
+# dependencies and generated files
+node_modules/
+dist/
+coverage/
+.turbo/
+*.tsbuildinfo
+
+# local secrets
+.env
+.env.*
+!.env.example

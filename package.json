@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "sonory",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "format": "oxfmt .",
+    "format:check": "oxfmt --check .",
+    "lint": "oxlint --deny-warnings --report-unused-disable-directives",
+    "lint:fix": "pnpm lint --fix",
+    "typecheck": "tsc --noEmit && turbo run typecheck",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "@vitest/coverage-v8": "5.0.3",
+    "oxfmt": "0.72.0",
+    "oxlint": "1.87.0",
+    "oxlint-tsgolint": "7.0.2004",
+    "turbo": "2.11.7",
+    "typescript": "7.0.2",
+    "vitest": "5.0.3"
+  },
+  "engines": {
+    "node": ">=24.20.0 <25",
+    "pnpm": ">=12 <13"
+  },
+  "packageManager": "pnpm@12.11.2"
+}

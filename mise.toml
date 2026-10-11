@@ -1,0 +1,5 @@
+#:schema https://mise.jdx.dev/schema/mise.json
+
+[tools]
+node = "24.20.0"
+pnpm = "12.11.2"
