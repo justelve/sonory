@@ -1,0 +1,6 @@
+{
+  "$schema": "../../../accounts.schema.json",
+  "version": 1,
+  "accounts": [],
+  "defaultAccounts": {}
+}

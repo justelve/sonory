@@ -1,0 +1,12 @@
+{
+  "$schema": "../../../accounts.schema.json",
+  "version": 1,
+  "accounts": [
+    {
+      "providerId": "deezer",
+      "id": "123",
+      "displayName": "Renée 🎵"
+    }
+  ],
+  "defaultAccounts": {}
+}

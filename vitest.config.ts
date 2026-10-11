@@ -12,6 +12,7 @@ export default defineConfig({
     unstubEnvs: true,
     unstubGlobals: true,
     allowOnly: false,
+    reporters: ["verbose"],
     coverage: {
       provider: "v8",
       include: ["{apps,packages}/*/src/**/*.{ts,tsx}"],

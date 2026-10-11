@@ -1,0 +1,26 @@
+{
+  "$schema": "../../../accounts.schema.json",
+  "version": 1,
+  "accounts": [
+    {
+      "providerId": "deezer",
+      "id": "123",
+      "displayName": "Renée 🎵"
+    },
+    {
+      "providerId": "deezer",
+      "id": "456",
+      "displayName": "Second account"
+    },
+    {
+      "providerId": "tidal",
+      "id": "123",
+      "displayName": "Same ID, different provider"
+    }
+  ],
+  "defaultProviderId": "deezer",
+  "defaultAccounts": {
+    "deezer": "456",
+    "tidal": "123"
+  }
+}
