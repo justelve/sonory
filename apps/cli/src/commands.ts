@@ -8,14 +8,20 @@ import { z } from "zod";
 
 export const usage = `Usage:
   sonory search <provider> <query>
+  sonory track <provider> <track>
+  sonory auth <provider>
   sonory formats <provider> <track>
   sonory download <provider> <track> <format> <destination>
 
-Quote queries and paths that contain spaces. Ctrl+C cancels downloads.`;
+Quote queries and paths that contain spaces. Ctrl+C cancels operations.
+Deezer auth prompts for a hidden ARL, or accepts {"arl":"..."} as JSON stdin.
+Credentials are validated without being saved.`;
 
 const nonempty = z.string().min(1);
 const commandSchema = z.union([
   z.tuple([z.literal("search"), nonempty, z.string()]),
+  z.tuple([z.literal("track"), nonempty, nonempty]),
+  z.tuple([z.literal("auth"), nonempty]),
   z.tuple([z.literal("formats"), nonempty, nonempty]),
   z.tuple([z.literal("download"), nonempty, nonempty, nonempty, nonempty]),
 ]);
@@ -35,8 +41,13 @@ export function runCommand(
   registry: ProviderRegistry,
   command: Command,
   context: OperationContext = {},
+  credentials: Readonly<Record<string, unknown>> = {},
 ): ResultAsync<string, CommandError> {
   switch (command[0]) {
+    case "auth":
+      return registry
+        .authenticate(command[1], credentials, context)
+        .map((account) => JSON.stringify(account, null, 2));
     case "search":
       return registry
         .search(command[1], { query: command[2] }, context)
@@ -45,6 +56,10 @@ export function runCommand(
       return registry
         .listFormats({ providerId: command[1], id: command[2] }, context)
         .map((formats) => JSON.stringify(formats, null, 2));
+    case "track":
+      return registry
+        .getTrack({ providerId: command[1], id: command[2] }, context)
+        .map((track) => JSON.stringify(track, null, 2));
     case "download":
       return downloadToFile(
         registry,

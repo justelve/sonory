@@ -4,7 +4,9 @@ import { join } from "node:path";
 
 import { ProviderRegistry } from "@sonory/core";
 import { createFixtureProvider } from "@sonory/provider-fixture";
+import { createDeezerProvider } from "@sonory/provider-deezer";
 import { expect, test } from "vitest";
+import { vi } from "vitest";
 
 import { parseCommand, runCommand } from "./commands.js";
 
@@ -21,6 +23,11 @@ test("fixture search, formats, and download produce a valid PCM WAV", async () =
     parseCommand(["search", "fixture", "tone"])._unsafeUnwrap(),
   );
   expect(search._unsafeUnwrap()).toContain('"id": "tone"');
+  const track = await runCommand(
+    registry,
+    parseCommand(["track", "fixture", "tone"])._unsafeUnwrap(),
+  );
+  expect(track._unsafeUnwrap()).toContain('"title": "440 Hz test tone"');
   const formats = await runCommand(
     registry,
     parseCommand(["formats", "fixture", "tone"])._unsafeUnwrap(),
@@ -80,4 +87,23 @@ test("fixture search filters tracks and rejects unsupported cursors", async () =
   expect(
     (await registry.search("fixture", { query: "tone", cursor: "invalid" }))._unsafeUnwrapErr().tag,
   ).toBe("invalid_input");
+});
+
+test("auth dispatch returns account identity without credentials", async () => {
+  const registry = new ProviderRegistry();
+  const fetch = vi.fn<typeof globalThis.fetch>(() =>
+    Promise.resolve(
+      Response.json({ error: [], results: { USER: { USER_ID: 42, BLOG_NAME: "Listener" } } }),
+    ),
+  );
+  expect(registry.register(createDeezerProvider(fetch)).isOk()).toBe(true);
+  const result = await runCommand(
+    registry,
+    parseCommand(["auth", "deezer"])._unsafeUnwrap(),
+    {},
+    { arl: "a".repeat(192) },
+  );
+  expect(result._unsafeUnwrap()).toBe(
+    JSON.stringify({ id: "42", displayName: "Listener" }, null, 2),
+  );
 });

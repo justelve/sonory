@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@sonory/core": "workspace:*",
+    "@sonory/provider-deezer": "workspace:*",
     "@sonory/provider-fixture": "workspace:*",
     "@sonory/provider-sdk": "workspace:*",
     "neverthrow": "8.2.0",
