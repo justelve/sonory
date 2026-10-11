@@ -8,6 +8,7 @@ import { createDeezerProvider } from "@sonory/provider-deezer";
 import { okAsync } from "neverthrow";
 import { expect, test } from "vitest";
 import { vi } from "vitest";
+import type { OperationContext } from "@sonory/provider-sdk";
 
 import { parseCommand, runCommand } from "./commands.js";
 
@@ -166,8 +167,120 @@ test("Deezer formats dispatch uses the signed-in session and returns JSON metada
     })
   )._unsafeUnwrap();
   expect(JSON.parse(result)).toEqual([
-    { id: "MP3_128", extension: "mp3", mediaType: "audio/mpeg", lossless: false, bitrateKbps: 128 },
+    {
+      id: "MP3_128",
+      extension: "mp3",
+      mediaType: "audio/mpeg",
+      lossless: false,
+      bitrateKbps: 128,
+      encrypted: true,
+    },
   ]);
   expect(result).not.toContain("private-");
-  expect(registry.list()[0]?.capabilities).toEqual(["auth", "catalog", "formats"]);
+  expect(registry.list()[0]?.capabilities).toEqual(["auth", "catalog", "formats", "download"]);
 });
+
+test.each(["complete", "truncated", "cancelled"] as const)(
+  "encrypted Deezer download %s exercises file publication and cleanup",
+  async (mode) => {
+    const directory = await mkdtemp(join(tmpdir(), "sonory-deezer-download-"));
+    try {
+      const registry = new ProviderRegistry();
+      const controller = new AbortController();
+      const context: OperationContext = {
+        signal: controller.signal,
+        session: {
+          account: { id: "42", displayName: "Listener" },
+          credentials: { arl: "a".repeat(192) },
+        },
+      };
+      const fetch = vi
+        .fn<typeof globalThis.fetch>()
+        .mockResolvedValueOnce(
+          Response.json({
+            error: [],
+            results: {
+              USER: { USER_ID: 42, OPTIONS: { license_token: "private-license" } },
+              checkForm: "private-csrf",
+            },
+          }),
+        )
+        .mockResolvedValueOnce(
+          Response.json({
+            error: [],
+            results: {
+              SNG_ID: "3135556",
+              TRACK_TOKEN: "private-track",
+              FILESIZE_MP3_128: "4",
+              FILESIZE_MP3_320: "0",
+              FILESIZE_FLAC: "0",
+            },
+          }),
+        )
+        .mockResolvedValueOnce(
+          Response.json({
+            data: [
+              {
+                media: [
+                  {
+                    media_type: "FULL",
+                    format: "MP3_128",
+                    sources: [{ url: "https://cdn.deezer.com/private-audio" }],
+                  },
+                ],
+              },
+            ],
+          }),
+        )
+        .mockImplementationOnce(() => {
+          let first = true;
+          return Promise.resolve(
+            new Response(
+              new ReadableStream<Uint8Array>({
+                pull(stream) {
+                  if (first) {
+                    first = false;
+                    stream.enqueue(Uint8Array.of(255, 0));
+                  } else {
+                    if (mode === "complete") stream.enqueue(Uint8Array.of(254, 128));
+                    if (mode === "cancelled") controller.abort();
+                    stream.close();
+                  }
+                },
+              }),
+              { headers: { "Content-Length": "4" } },
+            ),
+          );
+        });
+      registry.register(createDeezerProvider(fetch))._unsafeUnwrap();
+      const target = join(directory, "track.MP3_128.encrypted");
+      const result = await runCommand(
+        registry,
+        ["download", "deezer", "3135556", "MP3_128", target],
+        context,
+      );
+      const outcome = result.match(
+        (value) => {
+          const receipt: unknown = JSON.parse(value);
+          return receipt;
+        },
+        (error) => ({ error: error.tag }),
+      );
+      expect(outcome).toEqual(
+        mode === "complete"
+          ? { path: target }
+          : {
+              error: mode === "cancelled" ? "cancelled" : "incomplete_download",
+            },
+      );
+      expect(await readdir(directory)).toEqual(
+        mode === "complete" ? ["track.MP3_128.encrypted"] : [],
+      );
+      const bytes = mode === "complete" ? await readFile(target) : null;
+      expect(bytes).toEqual(mode === "complete" ? Buffer.from([255, 0, 254, 128]) : null);
+      expect(fetch).toHaveBeenCalledTimes(4);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  },
+);

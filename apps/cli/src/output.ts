@@ -121,6 +121,7 @@ export function renderOutput(output: CommandOutput, options: OutputOptions = jso
               format.id,
               format.mediaType,
               [
+                format.encrypted === true ? "Encrypted" : "",
                 format.lossless === true ? "Lossless" : "",
                 format.bitrateKbps === undefined ? "" : `${format.bitrateKbps} kbps`,
                 format.sampleRateHz === undefined ? "" : `${format.sampleRateHz / 1000} kHz`,

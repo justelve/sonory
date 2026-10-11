@@ -108,6 +108,15 @@ const topics: readonly HelpTopic[] = [
       },
     ],
     example: 'sonory download <provider> <track> <format> "./Music/song.flac"',
+    sections: [
+      {
+        title: "Deezer",
+        lines: [
+          "Deezer downloads save encrypted bytes, which are not playable audio files.",
+          "Use an .encrypted destination, such as ./track.MP3_128.encrypted.",
+        ],
+      },
+    ],
   },
   {
     name: "accounts",

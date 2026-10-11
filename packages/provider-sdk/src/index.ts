@@ -94,6 +94,7 @@ export interface AudioFormat {
   readonly bitrateKbps?: number;
   readonly sampleRateHz?: number;
   readonly bitDepth?: number;
+  readonly encrypted?: boolean;
 }
 
 export interface DownloadStream {

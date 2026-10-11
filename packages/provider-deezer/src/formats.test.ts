@@ -81,9 +81,23 @@ test("formats verify exact media access and expose only audio metadata", async (
   const { fetch, formats } = setup();
   const result = await formats.listFormats("3135556", context);
   expect(result._unsafeUnwrap()).toEqual([
-    { id: "MP3_128", extension: "mp3", mediaType: "audio/mpeg", lossless: false, bitrateKbps: 128 },
-    { id: "MP3_320", extension: "mp3", mediaType: "audio/mpeg", lossless: false, bitrateKbps: 320 },
-    { id: "FLAC", extension: "flac", mediaType: "audio/flac", lossless: true },
+    {
+      id: "MP3_128",
+      extension: "mp3",
+      mediaType: "audio/mpeg",
+      lossless: false,
+      bitrateKbps: 128,
+      encrypted: true,
+    },
+    {
+      id: "MP3_320",
+      extension: "mp3",
+      mediaType: "audio/mpeg",
+      lossless: false,
+      bitrateKbps: 320,
+      encrypted: true,
+    },
+    { id: "FLAC", extension: "flac", mediaType: "audio/flac", lossless: true, encrypted: true },
   ]);
   expect(fetch).toHaveBeenCalledTimes(5);
   expect(fetch.mock.calls[1]?.[0]).toBe(
@@ -120,6 +134,29 @@ test("basic playback accounts never probe higher qualities", async () => {
   expect(fetch).toHaveBeenCalledTimes(3);
 });
 
+test("download resolution rejects unknown formats before sending credentials", async () => {
+  const { fetch } = setup();
+  const provider = createDeezerProvider(fetch);
+  assert(provider.download !== undefined);
+  expect((await provider.download.open("3135556", "unknown", context))._unsafeUnwrapErr().tag).toBe(
+    "invalid_input",
+  );
+  expect(fetch).not.toHaveBeenCalled();
+});
+
+test("download resolution refuses a format outside the account entitlement", async () => {
+  const { fetch } = setup({
+    ...account,
+    USER: { ...account.USER, OPTIONS: { license_token: "private-license" } },
+  });
+  const provider = createDeezerProvider(fetch);
+  assert(provider.download !== undefined);
+  expect((await provider.download.open("3135556", "FLAC", context))._unsafeUnwrapErr().tag).toBe(
+    "unavailable",
+  );
+  expect(fetch).toHaveBeenCalledTimes(2);
+});
+
 test("mobile entitlements and numeric user/track IDs are supported", async () => {
   const { formats } = setup(
     {
@@ -127,7 +164,12 @@ test("mobile entitlements and numeric user/track IDs are supported", async () =>
       USER: {
         ...account.USER,
         USER_ID: "42",
-        OPTIONS: { license_token: "private-license", mobile_hq: true, mobile_lossless: true },
+        OPTIONS: {
+          license_token: "private-license",
+          mobile_hq: true,
+          mobile_lossless: true,
+          encrypted: true,
+        },
       },
     },
     { ...track, SNG_ID: 3135556 },

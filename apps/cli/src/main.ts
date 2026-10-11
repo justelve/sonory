@@ -110,7 +110,7 @@ if (
       search: "Searching music",
       track: "Loading track",
       formats: "Loading formats",
-      download: "Downloading audio",
+      download: "Downloading file",
       auth: "Verifying account",
       accounts:
         command.value[1] === undefined
