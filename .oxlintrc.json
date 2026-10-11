@@ -30,5 +30,13 @@
     "vitest/no-focused-tests": "error",
     "vitest/no-disabled-tests": "error"
   },
-  "ignorePatterns": ["**/dist/**", "**/coverage/**"]
+  "ignorePatterns": ["**/dist/**", "**/coverage/**"],
+  "overrides": [
+    {
+      "files": ["**/*.test.ts"],
+      "rules": {
+        "eslint/no-underscore-dangle": ["error", { "allow": ["_unsafeUnwrap", "_unsafeUnwrapErr"] }]
+      }
+    }
+  ]
 }
