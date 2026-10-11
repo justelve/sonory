@@ -12,6 +12,7 @@ import { parseCommand } from "./commands.js";
 import { promptChoice, promptCredentials, readCredentials } from "./credentials.js";
 import { argumentError, argumentHint, helpTopic, renderHelp } from "./help.js";
 import { renderError, terminalText } from "./output.js";
+import { formatDownloadProgress } from "./download-progress.js";
 
 const invocation = Result.fromThrowable(
   () =>
@@ -110,7 +111,7 @@ if (
       search: "Searching music",
       track: "Loading track",
       formats: "Loading formats",
-      download: "Downloading file",
+      download: "Preparing download",
       auth: "Verifying account",
       accounts:
         command.value[1] === undefined
@@ -153,6 +154,9 @@ if (
             }
           : undefined,
         output,
+        progress === undefined
+          ? {}
+          : { onProgress: (value) => progress.message(formatDownloadProgress(value)) },
       );
       progress?.clear();
       if (result.isErr()) {

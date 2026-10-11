@@ -1,5 +1,10 @@
 import { downloadToFile } from "@sonory/core";
-import type { DownloadError, OperationError, ProviderRegistry } from "@sonory/core";
+import type {
+  DownloadError,
+  DownloadProgress,
+  OperationError,
+  ProviderRegistry,
+} from "@sonory/core";
 import type { OperationContext } from "@sonory/provider-sdk";
 import { TaggedError } from "@sonory/provider-sdk";
 import { err, errAsync, ok, okAsync } from "neverthrow";
@@ -25,10 +30,15 @@ const commandSchema = z.union([
   z.tuple([z.literal("auth"), nonempty]),
   z.tuple([z.literal("auth")]),
   z.tuple([z.literal("formats"), nonempty, nonempty]),
-  z.tuple([z.literal("download"), nonempty, nonempty, nonempty, nonempty]),
+  z.tuple([z.literal("download"), nonempty, nonempty, nonempty.optional(), nonempty.optional()]),
 ]);
 export type Command = z.infer<typeof commandSchema>;
 export type CommandError = DownloadError | OperationError | TaggedError<"invalid_input">;
+
+export interface CommandOptions {
+  readonly chooseFormat?: (choices: readonly string[]) => ResultAsync<number, CommandError>;
+  readonly onProgress?: (progress: DownloadProgress) => void;
+}
 
 export function parseCommand(
   args: readonly string[],
@@ -45,6 +55,7 @@ export function runCommand(
   context: OperationContext = {},
   credentials: Readonly<Record<string, unknown>> = {},
   output: OutputOptions = jsonOutput,
+  options: CommandOptions = {},
 ): ResultAsync<string, CommandError> {
   switch (command[0]) {
     case "providers":
@@ -79,14 +90,53 @@ export function runCommand(
       return registry
         .getTrack({ providerId: command[1], id: command[2] }, context)
         .map((track) => renderOutput({ type: "track", value: track }, output));
-    case "download":
-      return downloadToFile(
-        registry,
-        { providerId: command[1], id: command[2] },
-        command[3],
-        command[4],
-        context,
-      ).map((path) => renderOutput({ type: "download", value: { path } }, output));
+    case "download": {
+      const ref = { providerId: command[1], id: command[2] };
+      const chooseFormat = options.chooseFormat;
+      const selected =
+        command[3] !== undefined
+          ? okAsync(command[3])
+          : chooseFormat === undefined
+            ? errAsync(
+                new TaggedError(
+                  "invalid_input",
+                  "Specify a format when downloading without an interactive terminal.",
+                ),
+              )
+            : registry
+                .listFormats(ref, context)
+                .andThen((formats): ResultAsync<string, CommandError> => {
+                  if (formats.length === 0)
+                    return errAsync(
+                      new TaggedError("unavailable", "No formats are available for this track."),
+                    );
+                  const only = formats.length === 1 ? formats[0] : undefined;
+                  if (only !== undefined) return okAsync(only.id);
+                  return chooseFormat(
+                    formats.map((format) =>
+                      [
+                        format.id,
+                        format.lossless === true ? "Lossless" : "",
+                        format.bitrateKbps === undefined ? "" : `${format.bitrateKbps} kbps`,
+                      ]
+                        .filter(Boolean)
+                        .join(" · "),
+                    ),
+                  ).andThen((index) => {
+                    const format = formats[index];
+                    return format === undefined
+                      ? errAsync(
+                          new TaggedError("invalid_input", "No download format was selected."),
+                        )
+                      : okAsync(format.id);
+                  });
+                });
+      return selected
+        .andThen((formatId) =>
+          downloadToFile(registry, ref, formatId, command[4], context, options.onProgress),
+        )
+        .map((path) => renderOutput({ type: "download", value: { path } }, output));
+    }
   }
   const unreachable: never = command;
   return unreachable;

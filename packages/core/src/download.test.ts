@@ -8,6 +8,7 @@ import { errAsync, okAsync } from "neverthrow";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { downloadToFile } from "./download.js";
+import type { DownloadProgress } from "./download.js";
 import { ProviderRegistry } from "./index.js";
 
 let directory: string;
@@ -44,6 +45,64 @@ function setup(
 }
 
 describe("downloadToFile", () => {
+  test("progress reports bytes written in order with the source's total", async () => {
+    const chunks = [Uint8Array.of(1, 2), Uint8Array.of(3, 4)];
+    const { registry, ref } = setup(() => okAsync(chunks.shift() ?? null));
+    const progress = vi.fn<(value: DownloadProgress) => void>();
+    (
+      await downloadToFile(registry, ref, "raw", join(directory, "track.bin"), {}, progress)
+    )._unsafeUnwrap();
+    expect(progress.mock.calls.map(([value]) => value.bytesWritten)).toEqual([0, 2, 4]);
+    expect(progress.mock.calls.map(([value]) => value.totalBytes)).toEqual([4, 4, 4]);
+    expect(progress.mock.calls.map(([value]) => value.elapsedMs)).toEqual(
+      progress.mock.calls.map(([value]) => value.elapsedMs).toSorted((a, b) => a - b),
+    );
+  });
+
+  test("default filenames stay in the current directory and use encrypted output metadata", async () => {
+    vi.spyOn(process, "cwd").mockReturnValue(directory);
+    const chunks = [Uint8Array.of(1, 2, 3, 4)];
+    const { registry, stream, ref } = setup(() => okAsync(chunks.shift() ?? null));
+    vi.spyOn(registry, "openDownload").mockReturnValueOnce(
+      okAsync({
+        stream,
+        contentLength: 4,
+        format: { id: "raw", extension: "mp3", mediaType: "audio/mpeg", encrypted: true },
+      }),
+    );
+    const path = (
+      await downloadToFile(registry, { ...ref, id: "../../CON:<track>" }, "raw", undefined)
+    )._unsafeUnwrap();
+    expect(path).toBe(join(directory, "test-.._.._CON__track_-raw.encrypted"));
+    expect(await readFile(path)).toEqual(Buffer.from([1, 2, 3, 4]));
+    expect(await readdir(directory)).toEqual(["test-.._.._CON__track_-raw.encrypted"]);
+  });
+
+  test("decrypted sources name files by audio extension and report indeterminate progress", async () => {
+    vi.spyOn(process, "cwd").mockReturnValue(directory);
+    const chunks = [Uint8Array.of(1, 2), Uint8Array.of(3, 4)];
+    const { registry, stream, ref } = setup(() => okAsync(chunks.shift() ?? null));
+    vi.spyOn(registry, "openDownload").mockReturnValueOnce(
+      okAsync({
+        stream,
+        format: { id: "MP3_128", extension: "mp3", mediaType: "audio/mpeg", encrypted: false },
+      }),
+    );
+    const progress = vi.fn<(value: DownloadProgress) => void>();
+    const path = (
+      await downloadToFile(registry, ref, "MP3_128", undefined, {}, progress)
+    )._unsafeUnwrap();
+    expect(path).toBe(join(directory, "test-track-MP3_128.mp3"));
+    expect(progress.mock.calls.map(([value]) => value.bytesWritten)).toEqual([0, 2, 4]);
+    expect(progress.mock.calls.map(([value]) => value.totalBytes)).toEqual([
+      undefined,
+      undefined,
+      undefined,
+    ]);
+    expect(await readFile(path)).toEqual(Buffer.from([1, 2, 3, 4]));
+    expect(await readdir(directory)).toEqual(["test-track-MP3_128.mp3"]);
+  });
+
   test("publishes complete bytes and removes the temporary file", async () => {
     const chunks = [Uint8Array.of(1, 2), Uint8Array.of(3, 4)];
     const { registry, stream, ref } = setup(() => okAsync(chunks.shift() ?? null));

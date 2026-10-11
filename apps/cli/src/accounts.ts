@@ -6,7 +6,7 @@ import { errAsync, okAsync } from "neverthrow";
 import type { ResultAsync } from "neverthrow";
 
 import { parseCommand as parseResolved, runCommand } from "./commands.js";
-import type { Command, CommandError } from "./commands.js";
+import type { Command, CommandError, CommandOptions } from "./commands.js";
 
 import { jsonOutput, renderOutput } from "./output.js";
 import type { OutputOptions } from "./output.js";
@@ -21,6 +21,7 @@ export function runAccountCommand(
   accountId?: string,
   choose?: Choose,
   output: OutputOptions = jsonOutput,
+  options: Pick<CommandOptions, "onProgress"> = {},
 ): ResultAsync<string, AccountError | CommandError> {
   if (command[0] === "auth") {
     const providers = manager.registry
@@ -128,7 +129,15 @@ export function runAccountCommand(
     resolved[1] = selected.providerId;
     // Only the provider argument changes; validate the resulting command through the parser.
     return parseResolved(resolved).asyncAndThen((value) =>
-      runCommand(manager.registry, value, selected, {}, output),
+      runCommand(manager.registry, value, selected, {}, output, {
+        ...options,
+        ...(choose === undefined
+          ? {}
+          : {
+              chooseFormat: (choices: readonly string[]) =>
+                choose(choices, "Which format do you want to download?"),
+            }),
+      }),
     );
   });
 }

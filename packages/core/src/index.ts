@@ -22,7 +22,7 @@ import type { z } from "zod";
 import { operationResultSchema, providerSchema, sessionSchema } from "./provider-schema.js";
 
 export { downloadToFile } from "./download.js";
-export type { DownloadError } from "./download.js";
+export type { DownloadError, DownloadProgress } from "./download.js";
 
 export class InvalidProviderError extends TaggedError<"invalid_provider"> {
   constructor(

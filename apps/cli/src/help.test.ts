@@ -35,7 +35,7 @@ test.each([
   { args: ["search", "deezer"], missing: "query" },
   { args: ["track", "deezer"], missing: "track" },
   { args: ["formats", "deezer"], missing: "track" },
-  { args: ["download", "deezer", "1", "flac"], missing: "destination" },
+  { args: ["download", "deezer"], missing: "track" },
   { args: ["accounts", "remove", "deezer"], missing: "account" },
   { args: ["accounts", "default", "deezer"], missing: "account" },
   { args: ["accounts", "provider"], missing: "provider" },

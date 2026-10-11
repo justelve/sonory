@@ -5,18 +5,90 @@ import { join } from "node:path";
 import { ProviderRegistry } from "@sonory/core";
 import { createFixtureProvider } from "@sonory/provider-fixture";
 import { createDeezerProvider } from "@sonory/provider-deezer";
-import { okAsync } from "neverthrow";
+import { errAsync, okAsync } from "neverthrow";
+import { TaggedError } from "@sonory/provider-sdk";
 import { expect, test } from "vitest";
 import { vi } from "vitest";
 import type { OperationContext } from "@sonory/provider-sdk";
 
 import { parseCommand, runCommand } from "./commands.js";
+import type { CommandOptions } from "./commands.js";
 
 function setup() {
   const registry = new ProviderRegistry();
   expect(registry.register(createFixtureProvider()).isOk()).toBe(true);
   return registry;
 }
+
+test("scripts must specify a format before querying or opening a download", async () => {
+  const registry = setup();
+  const list = vi.spyOn(registry, "listFormats");
+  const open = vi.spyOn(registry, "openDownload");
+  const result = await runCommand(registry, ["download", "fixture", "tone"]);
+  expect(result._unsafeUnwrapErr()).toMatchObject({ tag: "invalid_input" });
+  expect(list).not.toHaveBeenCalled();
+  expect(open).not.toHaveBeenCalled();
+});
+
+test.each([1, 2])("interactive downloads select from %s available formats", async (count) => {
+  const directory = await mkdtemp(join(tmpdir(), "sonory-format-"));
+  try {
+    vi.spyOn(process, "cwd").mockReturnValue(directory);
+    const registry = setup();
+    const wav = { id: "wav", extension: "wav", mediaType: "audio/wav", lossless: true };
+    const list = vi
+      .spyOn(registry, "listFormats")
+      .mockReturnValue(
+        okAsync(
+          count === 1
+            ? [wav]
+            : [{ id: "mp3", extension: "mp3", mediaType: "audio/mpeg", bitrateKbps: 128 }, wav],
+        ),
+      );
+    const open = vi.spyOn(registry, "openDownload");
+    const chooseFormat = vi.fn<NonNullable<CommandOptions["chooseFormat"]>>(() => okAsync(1));
+    const context = { signal: new AbortController().signal };
+    const result = await runCommand(
+      registry,
+      ["download", "fixture", "tone"],
+      context,
+      {},
+      undefined,
+      { chooseFormat },
+    );
+    expect(JSON.parse(result._unsafeUnwrap())).toEqual({
+      path: join(directory, "fixture-tone-wav.wav"),
+    });
+    expect(list).toHaveBeenCalledWith({ providerId: "fixture", id: "tone" }, context);
+    expect(open).toHaveBeenCalledWith({ providerId: "fixture", id: "tone" }, "wav", context);
+    expect(chooseFormat.mock.calls).toEqual(
+      count === 1 ? [] : [[["mp3 · 128 kbps", "wav · Lossless"]]],
+    );
+    expect(await readdir(directory)).toEqual(["fixture-tone-wav.wav"]);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test.each(["empty", "invalid", "cancelled"] as const)(
+  "%s format selection never opens a download",
+  async (mode) => {
+    const registry = setup();
+    const format = { id: "wav", extension: "wav", mediaType: "audio/wav" };
+    vi.spyOn(registry, "listFormats").mockReturnValue(
+      okAsync(mode === "empty" ? [] : [format, { ...format, id: "other" }]),
+    );
+    const open = vi.spyOn(registry, "openDownload");
+    const result = await runCommand(registry, ["download", "fixture", "tone"], {}, {}, undefined, {
+      chooseFormat: () =>
+        mode === "cancelled" ? errAsync(new TaggedError("cancelled", "Cancelled.")) : okAsync(99),
+    });
+    expect(result._unsafeUnwrapErr().tag).toBe(
+      mode === "empty" ? "unavailable" : mode === "cancelled" ? "cancelled" : "invalid_input",
+    );
+    expect(open).not.toHaveBeenCalled();
+  },
+);
 
 test("fixture search, formats, and download produce a valid PCM WAV", async () => {
   const registry = setup();

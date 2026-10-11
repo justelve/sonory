@@ -101,14 +101,27 @@ const topics: readonly HelpTopic[] = [
         description: "Provider ID, or default. Use sonory providers to check download support.",
       },
       { name: "track", description: "Track ID from the search results." },
-      { name: "format", description: "Format ID from the formats command." },
+      {
+        name: "format",
+        description: "Format ID from the formats command. Omit it to choose interactively.",
+        optional: true,
+      },
       {
         name: "destination",
-        description: "Output file path. An existing file will not be replaced.",
+        description:
+          "Output file path. Defaults to provider-track-format.extension in the current directory. Existing files are not replaced.",
+        optional: true,
       },
     ],
-    example: 'sonory download <provider> <track> <format> "./Music/song.flac"',
+    example: "sonory download <provider> <track>",
     sections: [
+      {
+        title: "Scripts",
+        lines: [
+          "Specify a format when running without an interactive terminal.",
+          "Progress is shown on stderr in terminals; JSON output stays on stdout.",
+        ],
+      },
       {
         title: "Deezer",
         lines: [

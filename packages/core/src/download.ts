@@ -16,17 +16,34 @@ export type DownloadError =
   | TaggedError<"incomplete_download">
   | TaggedError<"cleanup_failed">;
 
+export interface DownloadProgress {
+  readonly bytesWritten: number;
+  readonly totalBytes?: number;
+  readonly elapsedMs: number;
+}
+
+function defaultFilename(ref: TrackRef, source: DownloadSource): string {
+  const parts = [ref.providerId, ref.id, source.format.id].map((part) =>
+    part.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 60),
+  );
+  const extension =
+    source.format.encrypted === true
+      ? "encrypted"
+      : source.format.extension.replace(/[^a-zA-Z0-9]/g, "").slice(0, 16) || "bin";
+  return `${parts.join("-")}.${extension}`;
+}
+
 export function downloadToFile(
   registry: ProviderRegistry,
   ref: TrackRef,
   formatId: string,
-  destination: string,
+  destination: string | undefined,
   context: OperationContext = {},
+  onProgress?: (progress: DownloadProgress) => void,
 ): ResultAsync<string, DownloadError> {
   return ResultAsync.fromPromise(
     (async (): Promise<Result<string, DownloadError>> => {
-      const target = resolve(destination);
-      const temporary = join(dirname(target), `.sonory-${randomUUID()}.part`);
+      let temporary: string | undefined;
       let file: FileHandle | undefined;
       let source: DownloadSource | undefined;
       let created = false;
@@ -36,9 +53,19 @@ export function downloadToFile(
           const opened = await registry.openDownload(ref, formatId, context);
           if (opened.isErr()) return err(opened.error);
           source = opened.value;
+          const target = resolve(destination ?? defaultFilename(ref, source));
+          temporary = join(dirname(target), `.sonory-${randomUUID()}.part`);
           file = await open(temporary, "wx");
           created = true;
           let bytes = 0;
+          const started = performance.now();
+          const report = () =>
+            onProgress?.({
+              bytesWritten: bytes,
+              ...(source?.contentLength === undefined ? {} : { totalBytes: source.contentLength }),
+              elapsedMs: performance.now() - started,
+            });
+          report();
           while (true) {
             // eslint-disable-next-line no-await-in-loop -- Read only after writing the previous chunk to bound memory.
             const chunk = await source.stream.read();
@@ -58,6 +85,7 @@ export function downloadToFile(
               offset += written.bytesWritten;
               bytes += written.bytesWritten;
             }
+            report();
           }
           if (source.contentLength !== undefined && bytes !== source.contentLength) {
             return err(
@@ -89,7 +117,7 @@ export function downloadToFile(
         const closed = await ResultAsync.fromPromise(file.close(), (cause) => cause);
         if (closed.isErr()) failures.push(closed.error);
       }
-      if (created) {
+      if (created && temporary !== undefined) {
         const removed = await ResultAsync.fromPromise(unlink(temporary), (cause) => cause);
         if (removed.isErr()) failures.push(removed.error);
       }
