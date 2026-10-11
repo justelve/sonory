@@ -16,7 +16,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test",
-    "sonory": "pnpm --filter @sonory/cli start"
+    "sonory": "node apps/cli/dist/main.js"
   },
   "devDependencies": {
     "@types/node": "24.19.2",

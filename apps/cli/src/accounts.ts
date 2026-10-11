@@ -1,3 +1,4 @@
+import { TaggedError } from "@sonory/provider-sdk";
 import { AccountSelectionRequired, ProviderSelectionRequired } from "@sonory/core";
 import type { AccountError, AccountManager } from "@sonory/core";
 import type { OperationContext, SignInHost } from "@sonory/provider-sdk";
@@ -7,7 +8,10 @@ import type { ResultAsync } from "neverthrow";
 import { parseCommand as parseResolved, runCommand } from "./commands.js";
 import type { Command, CommandError } from "./commands.js";
 
-type Choose = (choices: readonly string[]) => ResultAsync<number, CommandError>;
+import { jsonOutput, renderOutput } from "./output.js";
+import type { OutputOptions } from "./output.js";
+
+type Choose = (choices: readonly string[], message?: string) => ResultAsync<number, CommandError>;
 
 export function runAccountCommand(
   manager: AccountManager,
@@ -16,19 +20,75 @@ export function runAccountCommand(
   context: OperationContext,
   accountId?: string,
   choose?: Choose,
+  output: OutputOptions = jsonOutput,
 ): ResultAsync<string, AccountError | CommandError> {
-  if (command[0] === "auth")
-    return manager
-      .signIn(command[1], host, context)
-      .map((account) => JSON.stringify(account, null, 2));
+  if (command[0] === "auth") {
+    const providers = manager.registry
+      .list()
+      .filter((provider) => provider.capabilities.includes("auth"));
+    if (providers.length === 0)
+      return errAsync(
+        new TaggedError("unsupported_capability", "No installed provider supports sign-in."),
+      );
+    const selected =
+      command[1] !== undefined
+        ? okAsync(command[1])
+        : choose === undefined
+          ? errAsync(
+              new TaggedError(
+                "invalid_input",
+                "Specify a provider when signing in without an interactive terminal.",
+              ),
+            )
+          : choose(
+              providers.map((provider) => `${provider.name} (${provider.id})`),
+              "Which provider do you want to sign in to?",
+            ).andThen((index) => {
+              const provider = providers[index];
+              return provider === undefined
+                ? errAsync(new TaggedError("invalid_input", "No sign-in provider was selected."))
+                : okAsync(provider.id);
+            });
+    return selected.andThen((providerId) =>
+      manager
+        .signIn(providerId, host, context)
+        .map((account) => renderOutput({ type: "account", value: account, providerId }, output)),
+    );
+  }
+  if (command[0] === "providers") return runCommand(manager.registry, command, context, {}, output);
   if (command[0] === "accounts") {
     if (command.length === 1)
-      return manager.store.load().map((settings) => JSON.stringify(settings, null, 2));
+      return manager.store
+        .load()
+        .map((settings) => renderOutput({ type: "accounts", value: settings }, output));
     if (command[1] === "provider")
-      return manager.setDefaultProvider(command[2]).map(() => "Default provider saved.");
+      return manager
+        .setDefaultProvider(command[2])
+        .map(() =>
+          renderOutput(
+            { type: "message", value: { message: `Default provider: ${command[2]}.` } },
+            output,
+          ),
+        );
     if (command[1] === "default")
-      return manager.setDefault(command[2], command[3]).map(() => "Default account saved.");
-    return manager.remove(command[2], command[3]).map(() => "Account removed.");
+      return manager.setDefault(command[2], command[3]).map(() =>
+        renderOutput(
+          {
+            type: "message",
+            value: { message: `Default account for ${command[2]}: ${command[3]}.` },
+          },
+          output,
+        ),
+      );
+    return manager.remove(command[2], command[3]).map(() =>
+      renderOutput(
+        {
+          type: "message",
+          value: { message: `Removed account ${command[3]} from ${command[2]}.` },
+        },
+        output,
+      ),
+    );
   }
   const requested = {
     ...(command[1] === "default" ? {} : { providerId: command[1] }),
@@ -41,6 +101,7 @@ export function runAccountCommand(
       if (choose !== undefined && error instanceof AccountSelectionRequired) {
         return choose(
           error.accounts.map((account) => `${account.displayName} (${account.id})`),
+          "Which account do you want to use?",
         ).andThen((index) => {
           const account = error.accounts[index];
           return account === undefined
@@ -49,7 +110,7 @@ export function runAccountCommand(
         });
       }
       if (choose !== undefined && error instanceof ProviderSelectionRequired) {
-        return choose(error.providerIds).andThen((index) => {
+        return choose(error.providerIds, "Which provider do you want to use?").andThen((index) => {
           const providerId = error.providerIds[index];
           return providerId === undefined ? errAsync(error) : resolve({ ...selection, providerId });
         });
@@ -63,11 +124,11 @@ export function runAccountCommand(
       return errAsync(error);
     });
   return resolve(requested).andThen((selected) => {
-    const resolved = [...command];
+    const resolved = [...command].filter((value): value is string => typeof value === "string");
     resolved[1] = selected.providerId;
     // Only the provider argument changes; validate the resulting command through the parser.
     return parseResolved(resolved).asyncAndThen((value) =>
-      runCommand(manager.registry, value, selected),
+      runCommand(manager.registry, value, selected, {}, output),
     );
   });
 }

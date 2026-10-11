@@ -1,15 +1,57 @@
-import { createInterface } from "node:readline/promises";
-import { Writable } from "node:stream";
-import type { Readable } from "node:stream";
+import type { Readable, Writable } from "node:stream";
+
+import { isCancel, password, select, text } from "@clack/prompts";
+import type { CANCEL_SYMBOL, CommonOptions } from "@clack/prompts";
 
 import { TaggedError } from "@sonory/provider-sdk";
 import type { CredentialField, OperationContext } from "@sonory/provider-sdk";
-import { err, errAsync, ok, ResultAsync } from "neverthrow";
+import { err, errAsync, ok, okAsync, ResultAsync } from "neverthrow";
 import type { Result } from "neverthrow";
 import { z } from "zod";
 
+import { terminalText } from "./output.js";
+
 const schema = z.record(z.string(), z.unknown());
 type CredentialError = TaggedError<"invalid_input"> | TaggedError<"cancelled">;
+
+function ask<T>(
+  input: Readable,
+  output: Writable,
+  context: OperationContext,
+  question: (options: CommonOptions) => Promise<T | typeof CANCEL_SYMBOL>,
+): ResultAsync<T, CredentialError> {
+  if (context.signal?.aborted === true || input.readableEnded || input.destroyed)
+    return errAsync(new TaggedError("cancelled", "Input was cancelled."));
+  const controller = new AbortController();
+  const cancel = () => controller.abort();
+  return ResultAsync.fromPromise(
+    Promise.resolve().then(async () => {
+      context.signal?.addEventListener("abort", cancel, { once: true });
+      input.once("end", cancel);
+      input.once("close", cancel);
+      if (context.signal?.aborted === true || input.readableEnded || input.destroyed) cancel();
+      try {
+        const answer = await question({
+          input,
+          output,
+          signal: controller.signal,
+          withGuide: false,
+        });
+        return isCancel(answer)
+          ? err(new TaggedError("cancelled", "Input was cancelled."))
+          : ok(answer);
+      } finally {
+        context.signal?.removeEventListener("abort", cancel);
+        input.removeListener("end", cancel);
+        input.removeListener("close", cancel);
+      }
+    }),
+    () => new TaggedError("invalid_input", "Could not read terminal input."),
+  ).andThen((result) => result);
+}
+
+const required = (value: string | undefined) =>
+  value === undefined || value.trim().length === 0 ? "Enter a value to continue." : undefined;
 
 export function promptCredentials(
   fields: readonly CredentialField[],
@@ -17,47 +59,21 @@ export function promptCredentials(
   output: Writable,
   context: OperationContext = {},
 ): ResultAsync<Readonly<Record<string, unknown>>, CredentialError> {
-  if (context.signal?.aborted === true)
-    return errAsync(new TaggedError("cancelled", "Credential input was cancelled."));
-  const controller = new AbortController();
-  const signal =
-    context.signal === undefined
-      ? controller.signal
-      : AbortSignal.any([context.signal, controller.signal]);
-  const cancel = () => controller.abort();
-  return ResultAsync.fromPromise(
-    Promise.resolve().then(async () => {
-      // Let readline handle editing and raw mode while suppressing all credential echo and history.
-      const muted = new Writable({
-        write(_chunk, _encoding, callback) {
-          callback();
-        },
-      });
-      const prompt = createInterface({ input, output: muted, terminal: true, historySize: 0 });
-      prompt.once("SIGINT", cancel);
-      prompt.once("close", cancel);
-      try {
-        const credentials: Record<string, unknown> = {};
-        for (const field of fields) {
-          output.write(`${field.label}: `);
-          // Prompts share a terminal and must run sequentially.
-          // oxlint-disable-next-line eslint/no-await-in-loop
-          credentials[field.id] = await prompt.question("", { signal });
-          output.write("\n");
-        }
-        return credentials;
-      } finally {
-        prompt.removeListener("SIGINT", cancel);
-        prompt.removeListener("close", cancel);
-        prompt.close();
-        muted.destroy();
-        if (signal.aborted) output.write("\n");
-      }
-    }),
-    () =>
-      signal.aborted
-        ? new TaggedError("cancelled", "Credential input was cancelled.")
-        : new TaggedError("invalid_input", "Could not read credentials."),
+  return fields.reduce<ResultAsync<Record<string, unknown>, CredentialError>>(
+    (operation, field) =>
+      operation.andThen((credentials) =>
+        ask<string>(input, output, context, (options) =>
+          (field.secret ? password : text)({
+            ...options,
+            message: terminalText(field.label),
+            validate: required,
+          }),
+        ).map((value) => {
+          credentials[field.id] = value;
+          return credentials;
+        }),
+      ),
+    okAsync({}),
   );
 }
 
@@ -118,37 +134,17 @@ export function promptChoice(
   input: Readable,
   output: Writable,
   context: OperationContext = {},
+  message = "Choose an account or provider",
 ): ResultAsync<number, CredentialError> {
-  if (context.signal?.aborted === true)
-    return errAsync(new TaggedError("cancelled", "Account selection was cancelled."));
-  const controller = new AbortController();
-  const signal =
-    context.signal === undefined
-      ? controller.signal
-      : AbortSignal.any([context.signal, controller.signal]);
-  const cancel = () => controller.abort();
-  return ResultAsync.fromPromise(
-    Promise.resolve().then(async () => {
-      const prompt = createInterface({ input, output, terminal: true, historySize: 0 });
-      prompt.once("SIGINT", cancel);
-      prompt.once("close", cancel);
-      try {
-        choices.forEach((choice, index) => output.write(`${index + 1}. ${choice}\n`));
-        return await prompt.question("Choose an account or provider: ", { signal });
-      } finally {
-        prompt.removeListener("SIGINT", cancel);
-        prompt.removeListener("close", cancel);
-        prompt.close();
-      }
+  if (choices.length === 0)
+    return errAsync(
+      new TaggedError("invalid_input", "No accounts or providers are available to select."),
+    );
+  return ask<number>(input, output, context, (options) =>
+    select({
+      ...options,
+      message,
+      options: choices.map((label, value) => ({ value, label: terminalText(label) })),
     }),
-    () =>
-      signal.aborted
-        ? new TaggedError("cancelled", "Account selection was cancelled.")
-        : new TaggedError("invalid_input", "Could not read account selection."),
-  ).andThen((answer) => {
-    const index = Number(answer.trim()) - 1;
-    return Number.isInteger(index) && index >= 0 && index < choices.length
-      ? ok(index)
-      : err(new TaggedError("invalid_input", "Choose a listed number."));
-  });
+  );
 }

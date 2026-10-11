@@ -114,9 +114,34 @@ test("multiple accounts ask the host unless explicitly selected or defaulted", a
   (
     await runAccountCommand(manager, ["search", "alpha", "query"], host, {}, undefined, choose)
   )._unsafeUnwrap();
-  expect(choose).toHaveBeenCalledWith(["One (1)", "Two (2)"]);
+  expect(choose).toHaveBeenCalledWith(["One (1)", "Two (2)"], "Which account do you want to use?");
   expect(contexts[0]?.session?.account.id).toBe("2");
   (await manager.setDefault("alpha", "1"))._unsafeUnwrap();
   (await runAccountCommand(manager, ["search", "alpha", "query"], host, {}, "2"))._unsafeUnwrap();
   expect(contexts[1]?.session?.account.id).toBe("2");
+});
+
+test("bare auth asks for a provider before requesting credentials", async () => {
+  const { manager } = await setup();
+  const choose = vi.fn<
+    (choices: readonly string[], message?: string) => ResultAsync<number, never>
+  >(() => okAsync(0));
+  (await runAccountCommand(manager, ["auth"], host, {}, undefined, choose))._unsafeUnwrap();
+  expect(choose).toHaveBeenCalledWith(
+    ["Alpha (alpha)"],
+    "Which provider do you want to sign in to?",
+  );
+  expect((await manager.list())._unsafeUnwrap()).toHaveLength(1);
+});
+
+test("bare auth in scripts returns a specific error without reading credentials", async () => {
+  const { manager } = await setup();
+  const requestCredentials = vi.fn<SignInHost["requestCredentials"]>(() =>
+    okAsync({ token: "private" }),
+  );
+  const result = await runAccountCommand(manager, ["auth"], { requestCredentials }, {});
+  expect(result._unsafeUnwrapErr().message).toBe(
+    "Specify a provider when signing in without an interactive terminal.",
+  );
+  expect(requestCredentials).not.toHaveBeenCalled();
 });

@@ -9,10 +9,12 @@
     "start": "node dist/main.js"
   },
   "dependencies": {
+    "@clack/prompts": "1.8.1",
     "@sonory/core": "workspace:*",
     "@sonory/provider-deezer": "workspace:*",
     "@sonory/provider-fixture": "workspace:*",
     "@sonory/provider-sdk": "workspace:*",
+    "cli-table3": "0.6.5",
     "neverthrow": "8.2.0",
     "zod": "4.6.5"
   }

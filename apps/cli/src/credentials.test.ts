@@ -50,6 +50,7 @@ test("pre-cancelled input returns immediately", async () => {
 });
 
 function terminal() {
+  vi.stubEnv("TERM", "xterm-256color");
   const input = new PassThrough();
   const output = new PassThrough();
   let text = "";
@@ -66,10 +67,14 @@ test("the ARL prompt supports editing without echoing the credential", async () 
     input,
     output,
   );
-  await Promise.resolve();
-  input.write("abcx\x7fdef\r");
+  await vi.waitFor(() => expect(text()).toContain("Deezer ARL"));
+  input.write("abcx");
+  input.write("\x7f");
+  input.write("def\r");
   expect((await operation)._unsafeUnwrap()).toEqual({ arl: "abcdef" });
-  expect(text()).toBe("Deezer ARL: \n");
+  expect(text()).toContain("Deezer ARL");
+  expect(text()).not.toContain("abcdef");
+  expect(text()).not.toContain("private-credential");
   expect(input.listenerCount("keypress")).toBe(0);
 });
 
@@ -82,10 +87,12 @@ test("Ctrl+C cancels the hidden prompt and restores raw mode", async () => {
     input,
     output,
   );
-  await Promise.resolve();
+  await vi.waitFor(() => expect(text()).toContain("Deezer ARL"));
   input.write("private-credential\x03");
   expect((await operation)._unsafeUnwrapErr().tag).toBe("cancelled");
-  expect(text()).toBe("Deezer ARL: \n");
+  expect(text()).toContain("Deezer ARL");
+  expect(text()).not.toContain("abcdef");
+  expect(text()).not.toContain("private-credential");
   expect(setRawMode).toHaveBeenNthCalledWith(1, true);
   expect(setRawMode).toHaveBeenLastCalledWith(false);
   expect(input.listenerCount("keypress")).toBe(0);
@@ -138,17 +145,18 @@ test("providers define their own credential fields", async () => {
     input,
     output,
   );
-  await Promise.resolve();
+  await vi.waitFor(() => expect(text()).toContain("Provider token"));
   input.write("secret\r");
   expect((await operation)._unsafeUnwrap()).toEqual({ token: "secret" });
-  expect(text()).toBe("Provider token: \n");
+  expect(text()).toContain("Provider token");
+  expect(text()).not.toContain("secret");
 });
 
 test("account selection returns the selected index", async () => {
   const { input, output } = terminal();
   const operation = promptChoice(["One", "Two"], input, output);
   await Promise.resolve();
-  input.write("2\r");
+  input.write("\x1b[B\r");
   expect((await operation)._unsafeUnwrap()).toBe(1);
 });
 

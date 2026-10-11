@@ -2,36 +2,28 @@ import { downloadToFile } from "@sonory/core";
 import type { DownloadError, OperationError, ProviderRegistry } from "@sonory/core";
 import type { OperationContext } from "@sonory/provider-sdk";
 import { TaggedError } from "@sonory/provider-sdk";
-import { err, errAsync, ok } from "neverthrow";
+import { err, errAsync, ok, okAsync } from "neverthrow";
 import type { Result, ResultAsync } from "neverthrow";
 import { z } from "zod";
 
-export const usage = `Usage:
-  sonory search <provider> <query>
-  sonory track <provider> <track>
-  sonory auth <provider>
-  sonory accounts
-  sonory accounts remove <provider> <account>
-  sonory accounts default <provider> <account>
-  sonory accounts provider <provider>
-  sonory formats <provider> <track>
-  sonory download <provider> <track> <format> <destination>
+import { argumentError, renderHelp } from "./help.js";
 
-Quote queries and paths that contain spaces. Ctrl+C cancels operations.
-Deezer auth prompts for a hidden ARL, or accepts {"arl":"..."} as JSON stdin.
-Sign-in persists in protected OS credential storage.
-Use --account <id> to select an account, or use "default" as the provider.
-Without a default, multiple accounts require an interactive selection.`;
+import { jsonOutput, renderOutput } from "./output.js";
+import type { OutputOptions } from "./output.js";
+
+export const usage = renderHelp();
 
 const nonempty = z.string().min(1);
 const commandSchema = z.union([
+  z.tuple([z.literal("providers")]),
   z.tuple([z.literal("accounts")]),
   z.tuple([z.literal("accounts"), z.literal("remove"), nonempty, nonempty]),
   z.tuple([z.literal("accounts"), z.literal("default"), nonempty, nonempty]),
   z.tuple([z.literal("accounts"), z.literal("provider"), nonempty]),
-  z.tuple([z.literal("search"), nonempty, z.string()]),
+  z.tuple([z.literal("search"), nonempty, z.string().trim().min(1), nonempty.optional()]),
   z.tuple([z.literal("track"), nonempty, nonempty]),
   z.tuple([z.literal("auth"), nonempty]),
+  z.tuple([z.literal("auth")]),
   z.tuple([z.literal("formats"), nonempty, nonempty]),
   z.tuple([z.literal("download"), nonempty, nonempty, nonempty, nonempty]),
 ]);
@@ -44,7 +36,7 @@ export function parseCommand(
   const parsed = commandSchema.safeParse(args);
   return parsed.success
     ? ok(parsed.data)
-    : err(new TaggedError("invalid_input", usage, { cause: parsed.error }));
+    : err(new TaggedError("invalid_input", argumentError(args)));
 }
 
 export function runCommand(
@@ -52,28 +44,41 @@ export function runCommand(
   command: Command,
   context: OperationContext = {},
   credentials: Readonly<Record<string, unknown>> = {},
+  output: OutputOptions = jsonOutput,
 ): ResultAsync<string, CommandError> {
   switch (command[0]) {
+    case "providers":
+      return okAsync(renderOutput({ type: "providers", value: registry.list() }, output));
     case "accounts":
       return errAsync(
         new TaggedError("invalid_input", "Account commands require persistent storage."),
       );
-    case "auth":
+    case "auth": {
+      const providerId = command[1];
+      if (providerId === undefined)
+        return errAsync(
+          new TaggedError("invalid_input", "Choose a provider or pass its ID to sonory auth."),
+        );
       return registry
-        .authenticate(command[1], credentials, context)
-        .map((account) => JSON.stringify(account, null, 2));
+        .authenticate(providerId, credentials, context)
+        .map((account) => renderOutput({ type: "account", value: account, providerId }, output));
+    }
     case "search":
       return registry
-        .search(command[1], { query: command[2] }, context)
-        .map((page) => JSON.stringify(page, null, 2));
+        .search(
+          command[1],
+          { query: command[2], ...(command[3] === undefined ? {} : { cursor: command[3] }) },
+          context,
+        )
+        .map((page) => renderOutput({ type: "search", value: page }, output));
     case "formats":
       return registry
         .listFormats({ providerId: command[1], id: command[2] }, context)
-        .map((formats) => JSON.stringify(formats, null, 2));
+        .map((formats) => renderOutput({ type: "formats", value: formats }, output));
     case "track":
       return registry
         .getTrack({ providerId: command[1], id: command[2] }, context)
-        .map((track) => JSON.stringify(track, null, 2));
+        .map((track) => renderOutput({ type: "track", value: track }, output));
     case "download":
       return downloadToFile(
         registry,
@@ -81,7 +86,7 @@ export function runCommand(
         command[3],
         command[4],
         context,
-      ).map((path) => `Downloaded ${path}`);
+      ).map((path) => renderOutput({ type: "download", value: { path } }, output));
   }
   const unreachable: never = command;
   return unreachable;

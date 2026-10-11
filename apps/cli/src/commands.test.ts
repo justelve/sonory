@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { ProviderRegistry } from "@sonory/core";
 import { createFixtureProvider } from "@sonory/provider-fixture";
 import { createDeezerProvider } from "@sonory/provider-deezer";
+import { okAsync } from "neverthrow";
 import { expect, test } from "vitest";
 import { vi } from "vitest";
 
@@ -40,7 +41,7 @@ test("fixture search, formats, and download produce a valid PCM WAV", async () =
       registry,
       parseCommand(["download", "fixture", "tone", "wav", target])._unsafeUnwrap(),
     );
-    expect(download._unsafeUnwrap()).toBe(`Downloaded ${target}`);
+    expect(JSON.parse(download._unsafeUnwrap())).toEqual({ path: target });
     const wav = await readFile(target);
     expect(wav.length).toBe(64044);
     expect(wav.toString("ascii", 0, 4)).toBe("RIFF");
@@ -106,4 +107,11 @@ test("auth dispatch returns account identity without credentials", async () => {
   expect(result._unsafeUnwrap()).toBe(
     JSON.stringify({ id: "42", displayName: "Listener" }, null, 2),
   );
+});
+
+test("search cursor is passed to the provider", async () => {
+  const registry = setup();
+  const search = vi.spyOn(registry, "search").mockReturnValue(okAsync({ items: [] }));
+  (await runCommand(registry, ["search", "fixture", "tone", "25"]))._unsafeUnwrap();
+  expect(search).toHaveBeenCalledWith("fixture", { query: "tone", cursor: "25" }, {});
 });
