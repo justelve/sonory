@@ -191,7 +191,37 @@ importers:
         specifier: 5.0.3
         version: 5.0.3(@types/node@24.19.2)(@vitest/coverage-v8@5.0.3)(vite@8.3.4(@types/node@24.19.2))
 
+  apps/cli:
+    dependencies:
+      '@sonory/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@sonory/provider-fixture':
+        specifier: workspace:*
+        version: link:../../packages/provider-fixture
+      '@sonory/provider-sdk':
+        specifier: workspace:*
+        version: link:../../packages/provider-sdk
+      neverthrow:
+        specifier: 8.2.0
+        version: 8.2.0
+      zod:
+        specifier: 4.6.5
+        version: 4.6.5
+
   packages/core:
+    dependencies:
+      '@sonory/provider-sdk':
+        specifier: workspace:*
+        version: link:../provider-sdk
+      neverthrow:
+        specifier: 8.2.0
+        version: 8.2.0
+      zod:
+        specifier: 4.6.5
+        version: 4.6.5
+
+  packages/provider-fixture:
     dependencies:
       '@sonory/provider-sdk':
         specifier: workspace:*

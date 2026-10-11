@@ -19,6 +19,9 @@ import type { z } from "zod";
 
 import { operationResultSchema, providerSchema } from "./provider-schema.js";
 
+export { downloadToFile } from "./download.js";
+export type { DownloadError } from "./download.js";
+
 export class InvalidProviderError extends TaggedError<"invalid_provider"> {
   constructor(
     readonly issues: readonly z.core.$ZodIssue[],
